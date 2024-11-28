@@ -1,0 +1,205 @@
+Sub FinancialTracker()
+    Dim wsData As Worksheet
+    Dim wsSummary As Worksheet
+    Dim entryType As String
+    Dim category As String
+    Dim amount As Double
+    Dim entryDate As String
+    Dim parsedDate As Date
+    Dim lastRow As Long
+    Dim continueEntry As String
+    Dim validCategories As Variant
+    Dim isValidCategory As Boolean
+    
+    ' Valid categories
+    validCategories = Array("Auto", "Food", "Dress", "Spotify", "Miscellaneous", "Birthday", "Xerox", "Parents", "Flowers", "JIOFiber", "Outing")
+    
+    ' Create worksheets if they do not exist
+    On Error Resume Next
+    Set wsData = Worksheets("Data")
+    Set wsSummary = Worksheets("Summary")
+    If wsData Is Nothing Then
+        Set wsData = Worksheets.Add
+        wsData.Name = "Data"
+    End If
+    If wsSummary Is Nothing Then
+        Set wsSummary = Worksheets.Add
+        wsSummary.Name = "Summary"
+    End If
+    On Error GoTo 0
+    
+    ' Set headers for Data sheet
+    With wsData
+        If .Cells(1, 1).Value = "" Then
+            .Cells(1, 1).Value = "Date"
+            .Cells(1, 2).Value = "Type"
+            .Cells(1, 3).Value = "Category"
+            .Cells(1, 4).Value = "Amount"
+            .Rows(1).Font.Bold = True
+            .Columns("A:D").AutoFit
+        End If
+    End With
+    
+    Do
+        ' Input details
+        entryType = Application.InputBox("Enter the type: 'Expense' or 'Earnings'", "Type", Type:=2)
+        If UCase(entryType) <> "EXPENSE" And UCase(entryType) <> "EARNINGS" Then
+            MsgBox "Invalid type entered. Please enter either 'Expense' or 'Earnings'."
+            Exit Sub
+        End If
+        entryType = StrConv(entryType, vbProperCase)
+        
+        ' Validate category input
+        Do
+            category = Application.InputBox("Enter the category (Auto, Food, Dress, Spotify, Miscellaneous, Birthday, Xerox, Parents, Flowers, JIOFiber, Outing):", "Category", Type:=2)
+            category = StrConv(category, vbProperCase)
+            isValidCategory = Not IsError(Application.Match(category, validCategories, 0))
+            If Not isValidCategory Then MsgBox "Invalid category. Please choose from the list."
+        Loop Until isValidCategory
+        
+        amount = Application.InputBox("Enter the amount:", "Amount", Type:=1)
+        If amount <= 0 Then
+            MsgBox "Amount must be greater than zero. Please try again."
+            Exit Sub
+        End If
+        
+        ' Default date as today, but allow user to change it
+        entryDate = Application.InputBox("Enter the date (Default is today's date):", "Date", Format(Date, "DD/MM/YYYY"))
+        If entryDate = "" Then
+            parsedDate = Date ' Default to today's date
+        ElseIf IsDate(entryDate) Then
+            parsedDate = CDate(entryDate) ' Parse user-entered date
+        Else
+            MsgBox "Invalid date entered. Please try again."
+            Exit Sub
+        End If
+        
+        ' Add entry to Data sheet
+        With wsData
+            lastRow = .Cells(.Rows.Count, 1).End(xlUp).Row + 1
+            .Cells(lastRow, 1).Value = Format(parsedDate, "DD/MM/YYYY")
+            .Cells(lastRow, 2).Value = entryType
+            .Cells(lastRow, 3).Value = category
+            .Cells(lastRow, 4).Value = amount
+            If entryType = "Earnings" Then
+                .Cells(lastRow, 4).Font.Color = RGB(0, 128, 0) ' Green for earnings
+            End If
+        End With
+        
+        ' Update Summary
+        Call UpdateSummary(wsData, wsSummary)
+        
+        ' Ask to continue
+        continueEntry = MsgBox("Do you want to add another entry?", vbYesNo, "Continue?")
+        If continueEntry = vbNo Then Exit Do
+        
+    Loop
+    
+    MsgBox "All entries have been added successfully!"
+End Sub
+
+Sub UpdateSummary(wsData As Worksheet, wsSummary As Worksheet)
+    Dim lastRow As Long
+    Dim dictExpenses As Object, dictEarnings As Object, dictMonthly As Object
+    Dim i As Long
+    Dim dateVal As Date, category As String, amount As Double, entryType As String
+    Dim monthYear As String
+    Dim tblStartRow As Long
+    
+    ' Clear Summary sheet
+    wsSummary.Cells.Clear
+    wsSummary.Cells(1, 1).Value = "Summary Report"
+    wsSummary.Cells(1, 1).Font.Bold = True
+    wsSummary.Cells(1, 1).Font.Size = 14
+    
+    ' Initialize dictionaries
+    Set dictExpenses = CreateObject("Scripting.Dictionary")
+    Set dictEarnings = CreateObject("Scripting.Dictionary")
+    Set dictMonthly = CreateObject("Scripting.Dictionary")
+    
+    ' Loop through Data sheet
+    With wsData
+        lastRow = .Cells(.Rows.Count, 1).End(xlUp).Row
+        For i = 2 To lastRow
+            dateVal = .Cells(i, 1).Value
+            entryType = .Cells(i, 2).Value
+            category = .Cells(i, 3).Value
+            amount = .Cells(i, 4).Value
+            monthYear = Format(dateVal, "MMMM YYYY")
+            
+            ' Update category totals
+            If entryType = "Expense" Then
+                If Not dictExpenses.exists(category) Then
+                    dictExpenses(category) = 0
+                End If
+                dictExpenses(category) = dictExpenses(category) + amount
+            ElseIf entryType = "Earnings" Then
+                If Not dictEarnings.exists(category) Then
+                    dictEarnings(category) = 0
+                End If
+                dictEarnings(category) = dictEarnings(category) + amount
+            End If
+            
+            ' Update monthly totals
+            If Not dictMonthly.exists(monthYear) Then
+                dictMonthly(monthYear) = 0
+            End If
+            If entryType = "Expense" Then
+                dictMonthly(monthYear) = dictMonthly(monthYear) - amount
+            ElseIf entryType = "Earnings" Then
+                dictMonthly(monthYear) = dictMonthly(monthYear) + amount
+            End If
+        Next i
+    End With
+    
+    ' Write Expenses Summary
+    wsSummary.Cells(3, 1).Value = "Category"
+    wsSummary.Cells(3, 2).Value = "Total Expenses"
+    tblStartRow = 4
+    For Each Key In dictExpenses.keys
+        wsSummary.Cells(tblStartRow, 1).Value = Key
+        wsSummary.Cells(tblStartRow, 2).Value = dictExpenses(Key)
+        tblStartRow = tblStartRow + 1
+    Next Key
+    FormatAsTable wsSummary, "A3:B" & tblStartRow - 1, "ExpensesTable"
+    
+    ' Write Earnings Summary
+    wsSummary.Cells(3, 4).Value = "Category"
+    wsSummary.Cells(3, 5).Value = "Total Earnings"
+    tblStartRow = 4
+    For Each Key In dictEarnings.keys
+        wsSummary.Cells(tblStartRow, 4).Value = Key
+        wsSummary.Cells(tblStartRow, 5).Value = dictEarnings(Key)
+        wsSummary.Cells(tblStartRow, 5).Font.Color = RGB(0, 128, 0) ' Green for earnings
+        tblStartRow = tblStartRow + 1
+    Next Key
+    FormatAsTable wsSummary, "D3:E" & tblStartRow - 1, "EarningsTable"
+    
+    ' Write Monthly Summary
+    wsSummary.Cells(3, 7).Value = "Month"
+    wsSummary.Cells(3, 8).Value = "Net Total"
+    tblStartRow = 4
+    For Each Key In dictMonthly.keys
+        wsSummary.Cells(tblStartRow, 7).Value = Key
+        wsSummary.Cells(tblStartRow, 8).Value = dictMonthly(Key)
+        tblStartRow = tblStartRow + 1
+    Next Key
+    FormatAsTable wsSummary, "G3:H" & tblStartRow - 1, "MonthlySummaryTable"
+    
+    ' Format Summary sheet
+    With wsSummary
+        .Columns("A:H").AutoFit
+        .Rows(3).Font.Bold = True
+    End With
+End Sub
+
+Sub FormatAsTable(ws As Worksheet, rangeStr As String, tableName As String)
+    Dim rng As Range
+    On Error Resume Next
+    ws.ListObjects(tableName).Delete ' Delete the table if it already exists
+    On Error GoTo 0
+    Set rng = ws.Range(rangeStr)
+    ws.ListObjects.Add(xlSrcRange, rng, , xlYes).Name = tableName
+    ws.ListObjects(tableName).TableStyle = "TableStyleMedium9"
+End Sub
+
